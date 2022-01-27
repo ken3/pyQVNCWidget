@@ -2,7 +2,7 @@
 
 import sys
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtGui import QKeyEvent, QCursor, QPixmap
 from qvncwidget import QVNCWidget
@@ -13,6 +13,7 @@ class Window(QMainWindow):
 
         self.app = app
         self.initUI()
+        self.isResizing = False
 
         # local cursor shape on this application
         pixmap = QPixmap(2,2)
@@ -39,9 +40,33 @@ class Window(QMainWindow):
     def keyReleaseEvent(self, ev: QKeyEvent):
         self.vnc.onKeyRelease.emit(ev)
 
+    def event(self, ev: QEvent):
+        t = ev.type()
+        #print(f"event: type={t};")
+
+        if t == QEvent.Resize:
+            # pixmap resizing in progress
+            self.isResizing = True
+        elif t == QEvent.ActivationChange:
+            # Fit MainWindow to resized pixmap
+            self.isResizing = False
+            pixmap = self.vnc.pixmap()
+            vncWidth = self.vnc.vncWidth
+            if pixmap and vncWidth:
+                print(f"view scale: {float(pixmap.width()) / float(self.vnc.vncWidth)}")
+                self.resize(pixmap.size())
+        """elif t == QEvent.NonClientAreaMouseButtonRelease:
+            self.isResizing = False
+        elif t == QEvent.PlatformSurface:
+            self.isResizing = False
+        else:
+            True
+            """
+        return super().event(ev)
+
 app = QApplication(sys.argv)
 window = Window(app)
-window.resize(800, 600)
+#window.resize(800, 600)
 window.show()
 
 sys.exit(app.exec_())
