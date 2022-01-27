@@ -1,6 +1,7 @@
 import logging
 
 from PyQt5.QtCore import (
+    QEvent,
     QSize,
     Qt,
     pyqtSignal
@@ -19,6 +20,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
+    QSizePolicy,
     QWidget
 )
 
@@ -39,8 +41,8 @@ class QVNCWidget(QLabel, RFBClient):
     onKeyRelease = pyqtSignal(QKeyEvent)
 
     def __init__(self, parent, 
-                host, port=5900, password: str=None,
-                mouseTracking=False):
+                 host, port=5900, password: str=None,
+                 mouseTracking=False):
         super().__init__(
             parent=parent,
             host=host,
@@ -51,14 +53,22 @@ class QVNCWidget(QLabel, RFBClient):
         #import faulthandler
         #faulthandler.enable()
         self.screen: QImage = None
+        self.vncWidth  = None
+        self.vncHeight = None
 
-        # FIXME: The pixmap is assumed to be aligned center.
+        # The window can be shrink or expand
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+
+        # Prerequisites for cursor coordinate calculation
         self.setAlignment(Qt.AlignCenter)
+
+        # initial pixmap (dummy)
+        dummy = QPixmap(800, 600) # FIXME
+        dummy.fill(Qt.white)
+        self.setPixmap(dummy)
 
         self.onUpdatePixmap.connect(self._updateImage)
         self.onSetPixmap.connect(self._setImage)
-
-        self.acceptMouseEvents = False # mouse events are not accepted at first
         self.setMouseTracking(mouseTracking)
 
     def _initMouse(self):
@@ -83,16 +93,17 @@ class QVNCWidget(QLabel, RFBClient):
 
     def onRectangleUpdate(self,
             x: int, y: int, width: int, height: int, data: bytes):
-        #img = QImage(data, width, height, self.IMG_FORMAT)
         self.onUpdatePixmap.emit(x, y, width, height, data)
 
     def onFramebufferUpdateFinished(self):
         self.onSetPixmap.emit()
         return
 
-        if self.pixmap:
+        # *** NOT_REACHED ***
+        """if self.pixmap():
             #self.setPixmap(QPixmap.fromImage(self.image))
             self.resizeEvent(None)
+            """
 
     def onFatalError(self, error: Exception):
         log.error(str(error))
@@ -119,48 +130,54 @@ class QVNCWidget(QLabel, RFBClient):
         #self.repaint()
         #self.update()
 
-    def _drawPixmap(self, x: int, y: int, pix: QPixmap):
+    # *** NOT_USED ***
+    """def _drawPixmap(self, x: int, y: int, pix: QPixmap):
         #self.paintLock.acquire()
-        self.pixmap = pix
-
+        self.setPixmap(pix)
+    
         if not self.painter:
-            self.painter = QPainter(self.pixmap)
+            self.painter = QPainter(self.pixmap())
         else:
-            print("DRAW PIXMAP:", x, y, self.pixmap, self.painter, pix, pix.isNull())
-            self.painter.drawPixmap(x, y, self.pixmap)
+            print("DRAW PIXMAP:", x, y, self.pixmap(), self.painter, pix, pix.isNull())
+            self.painter.drawPixmap(x, y, self.pixmap())
         #self.paintLock.release()
+        """
 
-    def _drawPixmap2(self, x: int, y: int, pix: QPixmap, data: bytes):
-        if not self.pixmap or (
+    # *** NOT_USED ***
+    """def _drawPixmap2(self, x: int, y: int, pix: QPixmap, data: bytes):
+        if not self.pixmap() or (
             x == 0 and y == 0 and
-            pix.width() == self.pixmap.width() and pix.height() == self.pixmap.height()):
+            pix.width() == self.pixmap().width() and pix.height() == self.pixmap().height()):
 
-            self.pixmap = pix.copy()
+            self.setPixmap(pix.copy())
             self._setPixmap()
             return
         
         import time
-        print("DRAW PIXMAP:", x, y, self.pixmap.width(), self.pixmap.height(), pix.width(), pix.height())
+        print("DRAW PIXMAP:", x, y, self.pixmap().width(), self.pixmap().height(), pix.width(), pix.height())
         _t = time.time()
-        #self.pixmap.save(f"/tmp/images/imgP_{_t}", "jpg")
+        #self.pixmap().save(f"/tmp/images/imgP_{_t}", "jpg")
         #with open(f"/tmp/images/img_{_t}.raw", "wb") as f:
         #    f.write(data)
         #pix.save(f"/tmp/images/img_{_t}", "jpg")
 
-        painter = QPainter(self.pixmap)
+        painter = QPainter(self.pixmap())
         painter.drawPixmap(x, y, pix)
         painter.end()
         #self._setPixmap()
+        """
 
-    def _setPixmap(self):
-        if self.pixmap:
+    # *** NOT_USED ***
+    """def _setPixmap(self):
+        if self.pixmap():
             self.setPixmap(
-                self.pixmap.scaled(
+                self.pixmap().scaled(
                     self.width(), self.height(),
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
             )
+        """
 
     def _setImage(self):
         if self.screen:
@@ -171,7 +188,6 @@ class QVNCWidget(QLabel, RFBClient):
                     Qt.SmoothTransformation
                 )
             ))
-        self.acceptMouseEvents = True  # mouse events are getting accepted
 
     # Passed events
 
@@ -185,7 +201,7 @@ class QVNCWidget(QLabel, RFBClient):
 
     # Window events
 
-    def paintEvent(self, a0: QPaintEvent):
+    """def paintEvent(self, a0: QPaintEvent):
         return super().paintEvent(a0)
         if not self.screen:
             self.screen = QImage(self.size(), self.IMG_FORMAT)
@@ -201,10 +217,9 @@ class QVNCWidget(QLabel, RFBClient):
                 Qt.SmoothTransformation
             ))
         p.end()
+        """
 
     def resizeEvent(self, a0: QResizeEvent):
-        #print("RESIZE!", self.width(), self.height())
-        #return super().resizeEvent(a0)
         if self.screen:
             self.setPixmap(QPixmap.fromImage(
                 self.screen.scaled(
@@ -213,30 +228,19 @@ class QVNCWidget(QLabel, RFBClient):
                     Qt.SmoothTransformation
                 ))
             )
-        return super().resizeEvent(a0)
+            self.updateMargins()
 
     def mousePressEvent(self, ev: QMouseEvent):
-        #print(ev.localPos(), ev.button())
-        #print(self.height() - self.pixmap().height())
-
-        if self.acceptMouseEvents: # need pixmap instance
-            self.buttonMask = RFBInput.fromQMouseEvent(ev, True, self.buttonMask)
-            self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
-
-        return super().mousePressEvent(ev)
+        self.buttonMask = RFBInput.fromQMouseEvent(ev, True, self.buttonMask)
+        self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
-        if self.acceptMouseEvents: # need pixmap instance
-            self.buttonMask = RFBInput.fromQMouseEvent(ev, False, self.buttonMask)
-            self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
-
-        return super().mouseReleaseEvent(ev)
+        self.buttonMask = RFBInput.fromQMouseEvent(ev, False, self.buttonMask)
+        self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
 
     def mouseMoveEvent(self, ev: QMouseEvent):
-        if self.acceptMouseEvents: # need pixmap instance
-            self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
+        self.pointerEvent(*self._getRemoteRel(ev), self.buttonMask)
 
-    # FIXME: The pixmap is assumed to be aligned center.
     def _getRemoteRel(self, ev: QMouseEvent) -> tuple:
 
         # y coord is kinda fucked up
@@ -262,6 +266,26 @@ class QVNCWidget(QLabel, RFBClient):
     def _calcRemoteRel(self, locRel, locMax, remoteMax) -> int:
         return int( (locRel / locMax) * remoteMax )
 
+    # keep pixmap aspect ratio
+
+    def setPixmap(self, pix):
+        super().setPixmap(pix)
+        self.updateMargins()
+
+    def updateMargins(self):
+        pixmap = self.pixmap()
+        if pixmap:
+            pWidth  = pixmap.width()
+            pHeight = pixmap.height()
+            w = self.width()
+            h = self.height()
+            if w * pHeight > h * pWidth:
+                m = (w - (pWidth * h / pHeight)) / 2
+                self.setContentsMargins(m, 0, m, 0)
+            else:
+                m = (h - (pHeight * w / pWidth)) / 2
+                self.setContentsMargins(0, m, 0, m)
+        #self.update()
 
     def __del__(self):
         self.stop()
